@@ -1,0 +1,1625 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+  <title>Snapgram — Instagram 克隆</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #fafafa;
+      --surface: #ffffff;
+      --border: #efefef;
+      --text: #262626;
+      --text-secondary: #8e8e8e;
+      --accent: #0095f6;
+      --story-ring: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+      --radius-card: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 4px 12px rgba(0,0,0,0.05);
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang TC", "Microsoft JhengHei", sans-serif;
+      --max-width: 1200px;
+    }
+    body.dark {
+      --bg: #000000;
+      --surface: #121212;
+      --border: #2a2a2a;
+      --text: #f5f5f5;
+      --text-secondary: #a0a0a0;
+      --shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    html { font-family: var(--font); background: var(--bg); color: var(--text); }
+    body { min-height: 100vh; background: var(--bg); color: var(--text); }
+    button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    a { color: inherit; text-decoration: none; }
+    img, svg { display: block; max-width: 100%; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* ===== 登入/註冊頁 ===== */
+    #authPage {
+      position: fixed; inset: 0; z-index: 999;
+      background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; gap: 24px;
+    }
+    #authPage[hidden] { display: none; }
+    .auth-logo {
+      font-family: 'Brush Script MT', 'Segoe Script', cursive;
+      font-size: 52px; font-weight: 500; margin-bottom: 12px;
+    }
+    .auth-box {
+      width: 100%; max-width: 460px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 44px 40px;
+      display: flex; flex-direction: column; gap: 26px;
+    }
+    .auth-tabs { display: flex; gap: 0; margin-bottom: 4px; }
+    .auth-tab {
+      flex: 1; padding: 12px; text-align: center; font-size: 16px; font-weight: 600;
+      color: var(--text-secondary); border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .auth-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .auth-input {
+      width: 100%; padding: 16px 16px;
+      border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg); color: var(--text); font-size: 15px; outline: none;
+    }
+    .auth-input:focus { border-color: var(--accent); }
+    .auth-btn {
+      width: 100%; padding: 15px;
+      background: var(--accent); color: #fff;
+      border-radius: 10px; font-size: 16px; font-weight: 600;
+    }
+    .auth-btn:disabled { opacity: 0.5; }
+    .auth-divider { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 13px; }
+    .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .oauth-btn {
+      width: 100%; padding: 13px;
+      border: 1px solid var(--border); border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      font-size: 15px; font-weight: 600; transition: background 0.15s;
+    }
+    .oauth-btn:hover { background: var(--border); }
+    .oauth-btn svg { width: 20px; height: 20px; }
+    .auth-footer { font-size: 14px; color: var(--text-secondary); text-align: center; }
+    .auth-footer a { color: var(--accent); font-weight: 600; cursor: pointer; }
+    .auth-error { font-size: 14px; color: #ed4956; text-align: center; min-height: 20px; }
+
+    /* ===== 主介面 ===== */
+    #app { display: none; }
+    #app.show { display: block; }
+    body.logged-in #authPage { display: none; }
+    body.logged-in #app { display: block; }
+
+    .topbar { position: sticky; top: 0; z-index: 50; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .topbar__inner { display: flex; align-items: center; justify-content: space-between; max-width: var(--max-width); margin: 0 auto; padding: 10px 16px; height: 54px; }
+    .wordmark { font-family: 'Brush Script MT', 'Segoe Script', cursive; font-size: 26px; font-weight: 500; letter-spacing: -0.5px; }
+    .topbar__actions { display: flex; gap: 4px; }
+    .icon-btn { position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background 0.2s; }
+    .icon-btn:hover { background: rgba(0,0,0,0.05); }
+    body.dark .icon-btn:hover { background: rgba(255,255,255,0.08); }
+    .icon-btn svg { width: 24px; height: 24px; }
+    .icon-btn .icon-moon { display: none; }
+    body.dark .icon-btn .icon-sun { display: none; }
+    body.dark .icon-btn .icon-moon { display: block; }
+    .badge { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; background: #ed4956; border-radius: 50%; border: 2px solid var(--surface); }
+
+    .shell { display: flex; max-width: var(--max-width); margin: 0 auto; }
+
+    .sidenav { display: none; width: 72px; padding: 24px 8px; border-right: 1px solid var(--border); height: calc(100vh - 54px); position: sticky; top: 54px; flex-shrink: 0; }
+    .sidenav__list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .sidenav__list button { display: flex; align-items: center; justify-content: center; width: 100%; padding: 12px; border-radius: var(--radius-sm); transition: background 0.2s; }
+    .sidenav__list button:hover, .sidenav__list button.active { background: rgba(0,0,0,0.04); }
+    body.dark .sidenav__list button:hover, body.dark .sidenav__list button.active { background: rgba(255,255,255,0.08); }
+    .sidenav__list svg { width: 24px; height: 24px; flex-shrink: 0; }
+    .sidenav__label { display: none; font-size: 14px; font-weight: 500; }
+    .nav-avatar { width: 24px; height: 24px; font-size: 11px; }
+
+    .main { flex: 1; min-width: 0; padding: 16px; }
+    .view { display: block; }
+    .view[hidden] { display: none; }
+
+    .stories { display: flex; gap: 16px; overflow-x: auto; padding: 4px 0 16px; scrollbar-width: thin; }
+    .stories::-webkit-scrollbar { height: 4px; }
+    .stories::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .story-item { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 66px; cursor: pointer; }
+    .story-item__ring { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; background: var(--story-ring); padding: 2px; }
+    .story-item__inner { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 50%; background: var(--surface); border: 2px solid var(--surface); overflow: hidden; font-size: 24px; }
+    .story-item__name { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center; }
+
+    .feed { display: flex; flex-direction: column; gap: 16px; max-width: 470px; margin: 0 auto; }
+    .feed-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+    .feed-empty .feed-empty__icon { font-size: 64px; margin-bottom: 16px; }
+    .feed-empty h3 { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .feed-empty p { font-size: 14px; line-height: 1.5; }
+
+    .post { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+    .post__head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+    .avatar { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: var(--story-ring); color: #fff; font-size: 14px; font-weight: 600; flex-shrink: 0; overflow: hidden; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .avatar--me { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .post__user { font-size: 14px; font-weight: 600; cursor: pointer; }
+    .post__loc { font-size: 12px; color: var(--text-secondary); }
+    .post__more { margin-left: auto; font-size: 18px; color: var(--text-secondary); padding: 4px; }
+    .post__media { position: relative; aspect-ratio: 1/1; background: var(--bg); overflow: hidden; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
+    .post__media img { width: 100%; height: 100%; object-fit: cover; }
+    .post__media video { width: 100%; height: 100%; object-fit: cover; }
+    .post__heart { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s; font-size: 80px; color: #ed4956; text-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+    .post__heart.show { opacity: 1; animation: heartPop 0.6s ease-out; }
+    @keyframes heartPop { 0% { transform: scale(0.5); opacity: 0; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+    .post__actions { display: flex; align-items: center; gap: 12px; padding: 8px 14px 4px; }
+    .post__actions button { display: flex; align-items: center; gap: 4px; transition: transform 0.15s; }
+    .post__actions button:hover { transform: scale(1.05); }
+    .post__actions svg { width: 24px; height: 24px; }
+    .post__actions .like-active { color: #ed4956; }
+    .post__actions .like-active path { fill: #ed4956; stroke: #ed4956; }
+    .post__likes { font-size: 14px; font-weight: 600; padding: 0 14px; }
+    .post__caption { padding: 4px 14px; font-size: 14px; line-height: 1.4; }
+    .post__caption b { font-weight: 600; margin-right: 4px; cursor: pointer; }
+    .post__comments { padding: 4px 14px 12px; font-size: 14px; color: var(--text-secondary); cursor: pointer; }
+    .post__add-comment { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; border-top: 1px solid var(--border); margin-top: 4px; }
+    .post__add-comment input { flex: 1; border: none; background: transparent; font-size: 14px; color: var(--text); outline: none; padding: 4px 0; }
+    .post__add-comment input::placeholder { color: var(--text-secondary); }
+    .post__add-comment button { font-size: 14px; font-weight: 600; color: var(--accent); opacity: 0.4; pointer-events: none; }
+    .post__add-comment button.active { opacity: 1; pointer-events: auto; }
+
+    .search { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+    .search svg { width: 20px; height: 20px; color: var(--text-secondary); }
+    .search input { flex: 1; border: none; background: transparent; font-size: 15px; outline: none; color: var(--text); }
+    .search input::placeholder { color: var(--text-secondary); }
+    .search__hint { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+    .explore { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .explore__item { aspect-ratio: 1/1; background: var(--bg); border-radius: 4px; overflow: hidden; cursor: pointer; }
+    .explore__item img { width: 100%; height: 100%; object-fit: cover; }
+    .explore-user-card { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; cursor: pointer; transition: background 0.15s; }
+    .explore-user-card:hover { background: var(--bg); }
+    .explore-user-card .avatar { width: 48px; height: 48px; font-size: 20px; }
+    .explore-user-card__info { flex: 1; }
+    .explore-user-card__info b { display: block; font-size: 15px; font-weight: 600; }
+    .explore-user-card__info span { font-size: 13px; color: var(--text-secondary); }
+    .explore-empty { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+    .explore-empty .explore-empty__icon { font-size: 48px; margin-bottom: 12px; }
+
+    .reels { display: flex; flex-direction: column; gap: 16px; max-width: 470px; margin: 0 auto; }
+    .reel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+    .reel__media { position: relative; aspect-ratio: 9/16; max-height: 600px; background: #000; display: flex; align-items: center; justify-content: center; }
+    .reel__media video { width: 100%; height: 100%; object-fit: cover; }
+    .reel__play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 60px; color: rgba(255,255,255,0.7); pointer-events: none; }
+    .reel__info { padding: 12px 14px; }
+    .reel__user { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .reel__caption { font-size: 14px; color: var(--text-secondary); }
+    .reels-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+
+    .view__title { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+    .shop-empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+
+    /* 他人檔案 */
+    .user-profile { max-width: 600px; margin: 0 auto; }
+    .user-profile__back { display: flex; align-items: center; gap: 8px; padding: 8px 0; margin-bottom: 8px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text); }
+    .user-profile__back:hover { color: var(--accent); }
+    .user-profile__top { display: flex; align-items: center; gap: 24px; margin-bottom: 16px; }
+    .user-profile__top .avatar { width: 80px; height: 80px; font-size: 36px; }
+    .user-profile__stats { display: flex; gap: 24px; flex: 1; justify-content: space-around; }
+    .user-profile__stats div { display: flex; flex-direction: column; align-items: center; font-size: 14px; }
+    .user-profile__stats b { font-size: 18px; font-weight: 700; }
+    .user-profile__stats span { color: var(--text-secondary); }
+    .user-profile__name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .user-profile__bio { font-size: 14px; line-height: 1.4; white-space: pre-line; }
+    .user-profile__btns { display: flex; gap: 8px; margin: 16px 0; }
+    .user-profile__btns button { flex: 1; padding: 8px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); font-size: 14px; font-weight: 600; transition: background 0.2s; }
+    .user-profile__btns button:hover { background: var(--border); }
+
+    .profile { max-width: 600px; margin: 0 auto; }
+    .profile__top { display: flex; align-items: center; gap: 24px; margin-bottom: 16px; }
+    .avatar-wrap { position: relative; width: 80px; height: 80px; flex-shrink: 0; }
+    .avatar-wrap .avatar { width: 80px; height: 80px; font-size: 36px; cursor: pointer; }
+    .avatar-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; font-size: 12px; color: #fff; font-weight: 600; text-align: center; cursor: pointer; }
+    .avatar-wrap:hover .avatar-overlay { opacity: 1; }
+    .stats { display: flex; gap: 24px; flex: 1; justify-content: space-around; }
+    .stats div { display: flex; flex-direction: column; align-items: center; font-size: 14px; }
+    .stats b { font-size: 18px; font-weight: 700; }
+    .stats span { color: var(--text-secondary); }
+    .profile__name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .profile__bio { font-size: 14px; line-height: 1.4; white-space: pre-line; }
+    .profile__btns { display: flex; gap: 8px; margin: 16px 0; }
+    .profile__btns button { flex: 1; padding: 8px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); font-size: 14px; font-weight: 600; transition: background 0.2s; }
+    .profile__btns button:hover { background: var(--border); }
+    .profile__btns .danger { color: #ed4956; border-color: #ed4956; }
+    .highlights { display: flex; gap: 16px; overflow-x: auto; padding: 8px 0 16px; }
+    .hl { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
+    .hl__ring { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--border); font-size: 28px; }
+    .ptabs { display: flex; border-top: 1px solid var(--border); margin-top: 8px; }
+    .ptab { flex: 1; padding: 12px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); border-bottom: 2px solid transparent; }
+    .ptab.is-active { color: var(--text); border-bottom-color: var(--text); }
+    .pgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 4px; }
+    .pgrid__item { aspect-ratio: 1/1; background: var(--bg); border-radius: 4px; overflow: hidden; cursor: pointer; }
+    .pgrid__item img { width: 100%; height: 100%; object-fit: cover; }
+    .pgrid-empty { text-align: center; padding: 40px 20px; color: var(--text-secondary); grid-column: 1/-1; }
+
+    .aside { display: none; width: 300px; padding: 24px 16px; flex-shrink: 0; }
+    .aside__me { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .aside__me .avatar { width: 48px; height: 48px; font-size: 20px; }
+    .aside__me-info b { display: block; font-size: 14px; font-weight: 600; }
+    .aside__me-info span { font-size: 13px; color: var(--text-secondary); }
+    .aside__head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; }
+    .link-btn { font-size: 12px; font-weight: 600; color: var(--accent); }
+    .suggest { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+    .suggest li { display: flex; align-items: center; gap: 10px; }
+    .suggest .avatar { width: 36px; height: 36px; font-size: 14px; }
+    .suggest__info { flex: 1; }
+    .suggest__info b { display: block; font-size: 13px; font-weight: 600; }
+    .suggest__info span { font-size: 12px; color: var(--text-secondary); }
+    .suggest__follow { font-size: 12px; font-weight: 600; color: var(--accent); }
+    .suggest__follow.following { color: var(--text-secondary); }
+    .aside__foot { font-size: 11px; color: var(--text-secondary); margin-top: 24px; line-height: 1.5; }
+
+    .tabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50; background: var(--surface); border-top: 1px solid var(--border); padding: 6px 0; padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+    .tabbar__list { display: flex; justify-content: space-around; list-style: none; max-width: 500px; margin: 0 auto; }
+    .tabbar__list button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 12px; border-radius: var(--radius-sm); }
+    .tabbar__list button.active { color: var(--accent); }
+    .tabbar__list svg { width: 24px; height: 24px; }
+    .tabbar__list .sidenav__label { display: block; font-size: 10px; color: var(--text-secondary); }
+    .tabbar__list button.active .sidenav__label { color: var(--accent); }
+
+    /* 故事檢視器 */
+    .story { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .story[hidden] { display: none; }
+    .story__card { position: relative; width: 100%; max-width: 400px; aspect-ratio: 9/16; max-height: 90vh; background: #111; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+    .story__bars { display: flex; gap: 4px; padding: 8px; flex-shrink: 0; }
+    .story__bar { flex: 1; height: 3px; background: rgba(255,255,255,0.3); border-radius: 2px; overflow: hidden; }
+    .story__bar-fill { height: 100%; width: 0%; background: #fff; border-radius: 2px; transition: width 0.05s linear; }
+    .story__bar-fill.done { width: 100%; }
+    .story__head { display: flex; align-items: center; gap: 8px; padding: 4px 12px; color: #fff; flex-shrink: 0; }
+    .story__avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--story-ring); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; flex-shrink: 0; }
+    .story__name { font-size: 14px; font-weight: 600; }
+    .story__time { font-size: 12px; color: rgba(255,255,255,0.6); }
+    .story__close { margin-left: auto; font-size: 20px; color: #fff; padding: 4px; line-height: 1; }
+    .story__media { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+    .story__media img, .story__media video { width: 100%; height: 100%; object-fit: contain; }
+    .story__caption { padding: 12px; color: #fff; font-size: 14px; text-align: center; flex-shrink: 0; }
+    .story__zone { position: absolute; top: 60px; bottom: 60px; width: 30%; z-index: 10; cursor: pointer; }
+    .story__zone--prev { left: 0; }
+    .story__zone--next { right: 0; }
+
+    /* 通知面板 */
+    .panel { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,0.4); display: flex; justify-content: flex-end; }
+    .panel[hidden] { display: none; }
+    .panel__inner { width: 100%; max-width: 380px; height: 100%; background: var(--surface); overflow-y: auto; animation: slideIn 0.25s ease; }
+    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .panel__head { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 16px; position: sticky; top: 0; background: var(--surface); z-index: 1; }
+    .panel__list { list-style: none; }
+    .panel__item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .panel__item .avatar { width: 44px; height: 44px; font-size: 18px; }
+    .panel__text { flex: 1; font-size: 14px; line-height: 1.4; }
+    .panel__time { font-size: 12px; color: var(--text-secondary); }
+    .panel__action { padding: 6px 14px; background: var(--accent); color: #fff; border-radius: 8px; font-size: 13px; font-weight: 600; }
+    .panel-empty { text-align: center; padding: 40px 20px; color: var(--text-secondary); font-size: 14px; }
+
+    /* ===== 私信面板 ===== */
+    .dm-panel { position: fixed; inset: 0; z-index: 160; background: rgba(0,0,0,0.4); display: flex; justify-content: center; align-items: center; padding: 16px; }
+    .dm-panel[hidden] { display: none; }
+    .dm-panel__inner { width: 100%; max-width: 900px; height: 85vh; background: var(--surface); border-radius: 12px; overflow: hidden; display: flex; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+    .dm-sidebar { width: 320px; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+    .dm-sidebar__head { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border); }
+    .dm-sidebar__head h3 { font-size: 16px; font-weight: 700; }
+    .dm-sidebar__search { padding: 8px 16px; border-bottom: 1px solid var(--border); }
+    .dm-sidebar__search input { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+    .dm-sidebar__search input:focus { border-color: var(--accent); }
+    .dm-sidebar__list { flex: 1; overflow-y: auto; list-style: none; }
+    .dm-conv { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; transition: background 0.15s; }
+    .dm-conv:hover { background: var(--bg); }
+    .dm-conv.active { background: var(--bg); border-left: 3px solid var(--accent); }
+    .dm-conv .avatar { width: 44px; height: 44px; font-size: 18px; flex-shrink: 0; }
+    .dm-conv__info { flex: 1; min-width: 0; }
+    .dm-conv__name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dm-conv__preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dm-conv__badge { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; flex-shrink: 0; }
+    .dm-conv__badge.hidden { display: none; }
+    .dm-chat { flex: 1; display: flex; flex-direction: column; }
+    .dm-chat[hidden] { display: none; }
+    .dm-chat__head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .dm-chat__head .avatar { width: 32px; height: 32px; font-size: 14px; }
+    .dm-chat__name { font-size: 15px; font-weight: 600; }
+    .dm-chat__close { margin-left: auto; font-size: 20px; color: var(--text-secondary); padding: 4px; }
+    .dm-chat__messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .dm-msg { display: flex; max-width: 70%; }
+    .dm-msg--mine { align-self: flex-end; flex-direction: row-reverse; }
+    .dm-msg--theirs { align-self: flex-start; }
+    .dm-msg__bubble { padding: 10px 14px; border-radius: 18px; font-size: 14px; line-height: 1.4; word-break: break-word; }
+    .dm-msg--mine .dm-msg__bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .dm-msg--theirs .dm-msg__bubble { background: var(--border); color: var(--text); border-bottom-left-radius: 4px; }
+    .dm-msg__time { font-size: 10px; color: var(--text-secondary); margin-top: 2px; text-align: center; }
+    .dm-chat__input { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+    .dm-chat__input input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 20px; background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+    .dm-chat__input input:focus { border-color: var(--accent); }
+    .dm-chat__input button { padding: 8px 16px; background: var(--accent); color: #fff; border-radius: 20px; font-size: 14px; font-weight: 600; flex-shrink: 0; }
+    .dm-chat__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-secondary); }
+    .dm-chat__empty .dm-chat__empty-icon { font-size: 64px; margin-bottom: 16px; }
+    .dm-chat__empty h3 { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .dm-chat__empty p { font-size: 14px; text-align: center; }
+    .dm-new-chat { padding: 8px 16px; border-bottom: 1px solid var(--border); }
+    .dm-new-chat select { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+
+    /* 編輯個人檔案 Modal */
+    .edit-modal { position: fixed; inset: 0; z-index: 190; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .edit-modal[hidden] { display: none; }
+    .edit-modal__box { width: 100%; max-width: 400px; background: var(--surface); border-radius: 12px; overflow: hidden; }
+    .edit-modal__head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 700; }
+    .edit-modal__body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    .edit-field label { font-size: 13px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+    .edit-field input, .edit-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; outline: none; font-family: inherit; }
+    .edit-field textarea { min-height: 70px; resize: vertical; }
+    .edit-field input:focus, .edit-field textarea:focus { border-color: var(--accent); }
+    .edit-modal__foot { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+    .edit-modal__foot button { flex: 1; padding: 10px; border-radius: 8px; font-weight: 600; font-size: 14px; }
+    .edit-modal__foot .primary { background: var(--accent); color: #fff; }
+    .edit-modal__foot .secondary { border: 1px solid var(--border); }
+    .edit-error { font-size: 13px; color: #ed4956; min-height: 18px; }
+
+    /* 發布貼文 Modal */
+    .modal { position: fixed; inset: 0; z-index: 180; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .modal[hidden] { display: none; }
+    .modal__box { width: 100%; max-width: 420px; background: var(--surface); border-radius: 12px; overflow: hidden; }
+    .modal__head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 700; }
+    .modal__body { padding: 16px; }
+    .modal__body textarea { width: 100%; min-height: 100px; border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 14px; background: var(--bg); color: var(--text); resize: vertical; outline: none; font-family: inherit; }
+    .modal__media-preview { margin-top: 12px; aspect-ratio: 1/1; max-height: 200px; background: var(--bg); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 48px; overflow: hidden; cursor: pointer; }
+    .modal__media-preview img, .modal__media-preview video { width: 100%; height: 100%; object-fit: cover; }
+    .modal__foot { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+    .modal__foot button { flex: 1; padding: 10px; border-radius: 8px; font-weight: 600; font-size: 14px; }
+    .modal__foot .primary { background: var(--accent); color: #fff; }
+    .modal__foot .secondary { border: 1px solid var(--border); }
+    .modal__file-input { display: none; }
+
+    .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--text); color: var(--surface); padding: 10px 20px; border-radius: 20px; font-size: 13px; font-weight: 500; opacity: 0; pointer-events: none; transition: opacity 0.3s, transform 0.3s; z-index: 300; white-space: nowrap; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    body { padding-bottom: 70px; }
+    @media (min-width: 768px) {
+      .sidenav { display: block; }
+      .tabbar { display: none; }
+      body { padding-bottom: 0; }
+      .main { padding: 24px 32px; }
+      .stories { justify-content: center; }
+    }
+    @media (min-width: 1024px) {
+      .sidenav { width: 240px; }
+      .sidenav__list button { justify-content: flex-start; gap: 12px; padding: 12px 16px; }
+      .sidenav__label { display: block; }
+      .aside { display: block; }
+      .shell { gap: 16px; }
+      .main { max-width: 630px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ========== 登入/註冊頁 ========== -->
+  <div id="authPage">
+    <div class="auth-logo">Snapgram</div>
+    <div class="auth-box">
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-auth-tab="login" type="button">登入</button>
+        <button class="auth-tab" data-auth-tab="signup" type="button">註冊</button>
+      </div>
+      <div class="auth-error" id="authError"></div>
+      <div id="loginForm">
+        <input class="auth-input" type="email" id="loginEmail" placeholder="電郵地址" />
+        <input class="auth-input" type="password" id="loginPass" placeholder="密碼" />
+        <button class="auth-btn" id="loginBtn" type="button">登入</button>
+      </div>
+      <div id="signupForm" hidden>
+        <input class="auth-input" type="text" id="signupName" placeholder="全名" />
+        <input class="auth-input" type="text" id="signupUsername" placeholder="用戶名（唯一）" />
+        <input class="auth-input" type="email" id="signupEmail" placeholder="電郵地址" />
+        <input class="auth-input" type="password" id="signupPass" placeholder="密碼（至少6位）" />
+        <button class="auth-btn" id="signupBtn" type="button">註冊</button>
+      </div>
+    </div>
+    <div class="auth-footer" id="authFooter">還沒有帳號？ <a id="switchToSignup">註冊</a></div>
+  </div>
+
+  <!-- ========== 主 App ========== -->
+  <div id="app">
+    <header class="topbar">
+      <div class="topbar__inner">
+        <a class="wordmark" href="#" id="wordmark">Snapgram</a>
+        <div class="topbar__actions">
+          <button class="icon-btn" id="createBtn" type="button" aria-label="發布">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button class="icon-btn" id="notifBtn" type="button" aria-label="通知">
+            <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7.5 2.5c0 5.4-7.5 10-7.5 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            <span class="badge" id="notifBadge" hidden></span>
+          </button>
+          <button class="icon-btn" id="dmBtn" type="button" aria-label="訊息">
+            <svg viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L4 20l1.3-4A8.5 8.5 0 1 1 21 11.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 12l3-3 2.5 2.5L16 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="badge" id="dmBadge" hidden></span>
+          </button>
+          <button class="icon-btn" id="themeToggle" type="button" aria-label="切換主題">
+            <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <svg class="icon-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="shell">
+      <nav class="sidenav" aria-label="主要導航">
+        <ul class="sidenav__list">
+          <li><button type="button" data-nav="home" class="active" aria-label="首頁"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="sidenav__label">首頁</span></button></li>
+          <li><button type="button" data-nav="search" aria-label="搜尋"><svg viewBox="0 0 24 24"><path d="M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0zM16.5 16.5 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="sidenav__label">搜尋</span></button></li>
+          <li><button type="button" data-nav="reels" aria-label="Reels"><svg viewBox="0 0 24 24"><path d="M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4zM3 8h18M8 3l3 5M14 3l3 5M10 12l5 3-5 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="sidenav__label">Reels</span></button></li>
+          <li><button type="button" data-nav="shop" aria-label="商店"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="sidenav__label">商店</span></button></li>
+          <li id="adminNavItem" hidden><button type="button" data-nav="admin" aria-label="管理"><svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sidenav__label">管理</span></button></li>
+          <li><button type="button" data-nav="profile" aria-label="個人檔案"><span class="avatar avatar--me nav-avatar" id="navAvatar">?</span><span class="sidenav__label">個人檔案</span></button></li>
+        </ul>
+      </nav>
+
+      <main class="main" id="main">
+        <section class="view" id="view-home" data-view="home">
+          <div class="stories" id="stories" role="list"></div>
+          <div class="feed" id="feed"></div>
+        </section>
+
+        <section class="view" id="view-search" data-view="search" hidden>
+          <form class="search" role="search" id="searchForm">
+            <svg viewBox="0 0 24 24"><path d="M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0zM16.5 16.5 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <input type="search" id="searchInput" placeholder="搜尋用戶…" autocomplete="off" />
+          </form>
+          <p class="search__hint" id="searchHint">搜尋用戶</p>
+          <div id="searchUsers"></div>
+          <div class="explore" id="explore"></div>
+        </section>
+
+        <section class="view" id="view-reels" data-view="reels" hidden>
+          <div class="reels" id="reels"></div>
+        </section>
+
+        <section class="view" id="view-shop" data-view="shop" hidden>
+          <h2 class="view__title">商店</h2>
+          <div class="shop-empty"><div style="font-size:48px;margin-bottom:12px;">🛒</div><p>商店功能開發中</p></div>
+        </section>
+
+        <section class="view" id="view-admin" data-view="admin" hidden>
+          <h2 class="view__title">🛡 管理面板</h2>
+          <div id="adminList"></div>
+        </section>
+
+        <section class="view" id="view-user" data-view="user" hidden>
+          <div class="user-profile" id="userProfile"></div>
+        </section>
+
+        <section class="view" id="view-profile" data-view="profile" hidden>
+          <div class="profile">
+            <div class="profile__top">
+              <div class="avatar-wrap">
+                <div class="avatar avatar--me" id="profileAvatar">?</div>
+                <div class="avatar-overlay" id="avatarOverlay">更換<br>頭像</div>
+              </div>
+              <div class="stats">
+                <div><b id="statPosts">0</b><span>貼文</span></div>
+                <div><b id="statFollowers">0</b><span>粉絲</span></div>
+                <div><b id="statFollowing">0</b><span>追蹤中</span></div>
+              </div>
+            </div>
+            <div class="profile__name" id="profileName">用戶</div>
+            <div class="profile__bio" id="profileBio"></div>
+            <div class="profile__btns">
+              <button type="button" id="editProfileBtn">編輯個人檔案</button>
+              <button type="button" id="shareProfileBtn">分享個人檔案</button>
+              <button type="button" id="logoutBtn">登出</button>
+            </div>
+            <div class="highlights" id="highlights"></div>
+            <div class="ptabs">
+              <button class="ptab is-active" data-ptab="grid" type="button">貼文</button>
+              <button class="ptab" data-ptab="reels" type="button">Reels</button>
+              <button class="ptab" data-ptab="tagged" type="button">標註</button>
+            </div>
+            <div class="pgrid" id="pgrid"></div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="aside">
+        <div class="aside__me">
+          <div class="avatar avatar--me" id="asideAvatar">?</div>
+          <div class="aside__me-info"><b id="asideUsername">用戶</b><span id="asideDisplayName">名稱</span></div>
+        </div>
+        <div class="aside__head"><span>為你推薦</span><button class="link-btn" type="button" id="seeAllBtn">查看全部</button></div>
+        <ul class="suggest" id="suggest"></ul>
+        <div class="aside__foot">關於 · 說明 · 新聞稿 · API · 工作機會 · 隱私 · 條款<br>© 2026 Snapgram</div>
+      </aside>
+    </div>
+
+    <nav class="tabbar">
+      <ul class="tabbar__list">
+        <li><button type="button" data-nav="home" class="active" aria-label="首頁"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="sidenav__label">首頁</span></button></li>
+        <li><button type="button" data-nav="search" aria-label="搜尋"><svg viewBox="0 0 24 24"><path d="M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0zM16.5 16.5 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="sidenav__label">搜尋</span></button></li>
+        <li><button type="button" data-nav="reels" aria-label="Reels"><svg viewBox="0 0 24 24"><path d="M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4zM3 8h18M8 3l3 5M14 3l3 5M10 12l5 3-5 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="sidenav__label">Reels</span></button></li>
+        <li><button type="button" data-nav="shop" aria-label="商店"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="sidenav__label">商店</span></button></li>
+        <li><button type="button" data-nav="profile" aria-label="個人檔案"><span class="avatar avatar--me nav-avatar" id="tabAvatar">?</span><span class="sidenav__label">檔案</span></button></li>
+      </ul>
+    </nav>
+  </div>
+
+  <!-- 故事檢視器 -->
+  <div class="story" id="storyViewer" hidden>
+    <div class="story__card">
+      <div class="story__bars" id="storyBars"></div>
+      <div class="story__head">
+        <div class="story__avatar" id="storyAvatar">?</div>
+        <span class="story__name" id="storyName">用戶</span>
+        <span class="story__time" id="storyTime">剛剛</span>
+        <button class="story__close" id="storyClose" type="button">✕</button>
+      </div>
+      <div class="story__media" id="storyMedia"></div>
+      <div class="story__caption" id="storyCaption"></div>
+      <div class="story__zone story__zone--prev" id="storyPrev"></div>
+      <div class="story__zone story__zone--next" id="storyNext"></div>
+    </div>
+  </div>
+
+  <!-- 通知面板 -->
+  <div class="panel" id="notifPanel" hidden>
+    <div class="panel__inner">
+      <div class="panel__head"><span>通知</span><button type="button" id="closeNotif">✕</button></div>
+      <ul class="panel__list" id="notifList"></ul>
+    </div>
+  </div>
+
+  <!-- 私信面板 -->
+  <div class="dm-panel" id="dmPanel" hidden>
+    <div class="dm-panel__inner">
+      <div class="dm-sidebar">
+        <div class="dm-sidebar__head">
+          <h3>訊息</h3>
+          <button type="button" id="closeDm" style="font-size:20px;color:var(--text-secondary);padding:4px;">✕</button>
+        </div>
+        <div class="dm-sidebar__search">
+          <input type="text" id="dmSearchInput" placeholder="搜尋對話…" />
+        </div>
+        <div class="dm-new-chat">
+          <select id="dmNewChatSelect">
+            <option value="">-- 選擇用戶開始聊天 --</option>
+          </select>
+        </div>
+        <ul class="dm-sidebar__list" id="dmConvList"></ul>
+      </div>
+      <div class="dm-chat" id="dmChatArea">
+        <div class="dm-chat__empty" id="dmChatEmpty">
+          <div class="dm-chat__empty-icon">💬</div>
+          <h3>你的訊息</h3>
+          <p>傳送私信給朋友和追蹤者</p>
+        </div>
+        <div class="dm-chat__head" id="dmChatHead" hidden>
+          <div class="avatar" id="dmChatAvatar">?</div>
+          <span class="dm-chat__name" id="dmChatName">用戶</span>
+          <button class="dm-chat__close" id="dmChatClose" type="button">✕</button>
+        </div>
+        <div class="dm-chat__messages" id="dmChatMessages" hidden></div>
+        <div class="dm-chat__input" id="dmChatInput" hidden>
+          <input type="text" id="dmMessageInput" placeholder="傳送訊息…" />
+          <button type="button" id="dmSendBtn">傳送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 編輯個人檔案 Modal -->
+  <div class="edit-modal" id="editProfileModal" hidden>
+    <div class="edit-modal__box">
+      <div class="edit-modal__head"><span>編輯個人檔案</span><button type="button" id="closeEditProfile">✕</button></div>
+      <div class="edit-modal__body">
+        <div class="edit-field">
+          <label>全名</label>
+          <input type="text" id="editFullName" />
+        </div>
+        <div class="edit-field">
+          <label>用戶名</label>
+          <input type="text" id="editUsername" />
+        </div>
+        <div class="edit-field">
+          <label>簡介</label>
+          <textarea id="editBio"></textarea>
+        </div>
+        <div class="edit-error" id="editError"></div>
+      </div>
+      <div class="edit-modal__foot">
+        <button class="secondary" type="button" id="cancelEditProfile">取消</button>
+        <button class="primary" type="button" id="saveEditProfile">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 發布貼文 Modal -->
+  <div class="modal" id="createModal" hidden>
+    <div class="modal__box">
+      <div class="modal__head"><span>建立新貼文</span><button type="button" id="closeCreate">✕</button></div>
+      <div class="modal__body">
+        <input type="file" accept="image/*,video/*" class="modal__file-input" id="createFileInput" />
+        <textarea id="createCaption" placeholder="寫下說明文字…"></textarea>
+        <div class="modal__media-preview" id="createPreview">📷 點擊選擇圖片或影片</div>
+      </div>
+      <div class="modal__foot">
+        <button class="secondary" type="button" id="cancelCreate">取消</button>
+        <button class="primary" type="button" id="submitCreate">分享</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 隱藏的頭像上傳輸入 -->
+  <input type="file" accept="image/*" id="avatarFileInput" style="display:none;" />
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ========== Firebase 配置 ==========
+    const firebaseConfig = {
+      apiKey: "AIzaSyD7F1ZBnSkffobKgDDmU-_VZkF4NSfX5Uk",
+      authDomain: "ignb-19c34.firebaseapp.com",
+      databaseURL: "https://ignb-19c34-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "ignb-19c34",
+      storageBucket: "ignb-19c34.firebasestorage.app",
+      messagingSenderId: "814650658913",
+      appId: "1:814650658913:web:a4eab9ef631390f72fda20",
+      measurementId: "G-HVH0SPWKQH"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.database();
+
+    // ========== 全域狀態 ==========
+    let currentUser = null;
+    let allUsers = {};
+    let allPosts = {};
+    let allStories = {};
+    let following = {};
+    let notifs = {};
+    let allMessages = {};
+    let currentDmPartner = null;
+    let onlineRef = null;
+    let currentTab = 'home';
+
+    // ========== 工具 ==========
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+    }
+    function getInitial(name) { return (name || '?').charAt(0).toUpperCase(); }
+    function getColor(id) {
+      const colors = ['#f09433','#e6683c','#dc2743','#cc2366','#bc1888','#667eea','#764ba2','#1a1a2e','#0f3460','#16213e'];
+      let h = 0;
+      for (let i = 0; i < (id || '').length; i++) h = id.charCodeAt(i) + ((h << 5) - h);
+      return colors[Math.abs(h) % colors.length];
+    }
+    function timeAgo(ts) {
+      if (!ts) return '剛剛';
+      const d = Date.now() - ts;
+      if (d < 60000) return '剛剛';
+      if (d < 3600000) return Math.floor(d / 60000) + ' 分鐘前';
+      if (d < 86400000) return Math.floor(d / 3600000) + ' 小時前';
+      return Math.floor(d / 86400000) + ' 天前';
+    }
+    function getDmKey(uid1, uid2) {
+      return [uid1, uid2].sort().join('_');
+    }
+    function isAdmin() {
+      return currentUser && currentUser.role === 'admin';
+    }
+
+    // ========== 認證 ==========
+    function showAuthError(msg) { document.getElementById('authError').textContent = msg; }
+
+    function switchAuthTab(tab) {
+      document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.authTab === tab));
+      document.getElementById('loginForm').hidden = tab !== 'login';
+      document.getElementById('signupForm').hidden = tab !== 'signup';
+      document.getElementById('authError').textContent = '';
+      document.getElementById('authFooter').innerHTML = tab === 'login'
+        ? '還沒有帳號？ <a id="switchToSignup">註冊</a>'
+        : '已有帳號？ <a id="switchToLogin">登入</a>';
+    }
+
+    function applyAdminVisibility() {
+      const adminNav = document.getElementById('adminNavItem');
+      if (adminNav) adminNav.hidden = !isAdmin();
+    }
+
+    function loadUserData(user) {
+      db.ref('accounts/' + user.uid).once('value').then(snap => {
+        const d = snap.val() || {};
+        currentUser = {
+          uid: user.uid, email: user.email,
+          username: d.username || user.email.split('@')[0],
+          fullname: d.fullname || '', bio: d.bio || '',
+          avatar: d.avatar || '',
+          role: d.role || 'user', banned: d.banned || false,
+          createdAt: d.createdAt || Date.now()
+        };
+        if (currentUser.banned) { auth.signOut(); showToast('你的帳號已被封禁'); return; }
+
+        applyAdminVisibility();
+
+        onlineRef = db.ref('online/' + user.uid);
+        onlineRef.set({ lastSeen: Date.now(), status: 'online' });
+        onlineRef.onDisconnect().set({ lastSeen: Date.now(), status: 'offline' });
+        setInterval(() => { if (onlineRef) onlineRef.set({ lastSeen: Date.now(), status: 'online' }); }, 5000);
+
+        document.body.classList.add('logged-in');
+        listenData();
+        navigate('home');
+      });
+    }
+
+    auth.onAuthStateChanged(user => {
+      if (user) loadUserData(user);
+      else { document.body.classList.remove('logged-in'); switchAuthTab('login'); }
+    });
+
+    function doLogin() {
+      const email = document.getElementById('loginEmail').value.trim();
+      const pass = document.getElementById('loginPass').value;
+      if (!email || !pass) { showAuthError('請輸入電郵和密碼'); return; }
+      auth.signInWithEmailAndPassword(email, pass).catch(err => showAuthError('登入失敗：' + err.message));
+    }
+
+    function doSignup() {
+      const name = document.getElementById('signupName').value.trim();
+      const username = document.getElementById('signupUsername').value.trim().toLowerCase();
+      const email = document.getElementById('signupEmail').value.trim();
+      const pass = document.getElementById('signupPass').value;
+      if (!name || !username || !email || !pass) { showAuthError('請填寫所有欄位'); return; }
+      if (pass.length < 6) { showAuthError('密碼至少6位'); return; }
+      if (!/^[a-zA-Z0-9_]+$/.test(username)) { showAuthError('用戶名只允許字母、數字、底線'); return; }
+      db.ref('accounts').orderByChild('username').equalTo(username).once('value').then(snap => {
+        if (snap.exists()) { showAuthError('用戶名已被使用'); return; }
+        auth.createUserWithEmailAndPassword(email, pass).then(cred => {
+          return db.ref('accounts/' + cred.user.uid).set({
+            email, username, fullname: name, bio: '',
+            avatar: '', role: 'user', banned: false, createdAt: Date.now()
+          });
+        }).then(() => showToast('註冊成功！')).catch(err => showAuthError('註冊失敗：' + err.message));
+      });
+    }
+
+    // ========== 即時監聽 ==========
+    function listenData() {
+      db.ref('accounts').on('value', snap => {
+        allUsers = snap.val() || {};
+        following = (allUsers[currentUser.uid] && allUsers[currentUser.uid].following) || {};
+        // 同步 currentUser 資料（含可能的後端更新）
+        if (allUsers[currentUser.uid]) {
+          const d = allUsers[currentUser.uid];
+          currentUser.fullname = d.fullname || '';
+          currentUser.username = d.username || '';
+          currentUser.bio = d.bio || '';
+          currentUser.avatar = d.avatar || '';
+          currentUser.role = d.role || 'user';
+        }
+        applyAdminVisibility();
+        renderStories(); renderFeed(); renderExplore(); renderProfile(); renderSuggest(); renderAdmin(); renderDmNewChatSelect();
+      });
+      db.ref('posts').on('value', snap => {
+        allPosts = snap.val() || {};
+        renderFeed(); renderReels(); renderProfile(); renderExplore();
+      });
+      db.ref('stories').on('value', snap => {
+        allStories = snap.val() || {};
+        renderStories();
+      });
+      db.ref('notifications/' + currentUser.uid).on('value', snap => {
+        notifs = snap.val() || {};
+        document.getElementById('notifBadge').hidden = Object.keys(notifs).length === 0;
+        renderNotifs();
+      });
+      db.ref('bans/' + currentUser.uid).on('value', snap => {
+        if (snap.val()) { auth.signOut(); showToast('你的帳號已被封禁'); }
+      });
+      db.ref('messages').on('value', snap => {
+        allMessages = snap.val() || {};
+        renderDmConversations();
+        if (currentDmPartner) renderDmMessages(currentDmPartner);
+        const unread = checkDmUnread();
+        document.getElementById('dmBadge').hidden = !unread;
+      });
+    }
+
+    function checkDmUnread() {
+      let hasUnread = false;
+      Object.entries(allMessages).forEach(([key, msgs]) => {
+        if (!key.includes(currentUser.uid)) return;
+        Object.values(msgs).forEach(m => {
+          if (!m.read && m.toUid === currentUser.uid) hasUnread = true;
+        });
+      });
+      return hasUnread;
+    }
+
+    // ========== 私信功能 ==========
+    function renderDmNewChatSelect() {
+      const sel = document.getElementById('dmNewChatSelect');
+      const others = Object.values(allUsers).filter(u => u.email !== currentUser.email && !u.banned);
+      sel.innerHTML = '<option value="">-- 選擇用戶開始聊天 --</option>' +
+        others.map(u => `<option value="${u.email}">${u.username} (${u.fullname || ''})</option>`).join('');
+    }
+
+    function renderDmConversations() {
+      const el = document.getElementById('dmConvList');
+      const convMap = {};
+      Object.entries(allMessages).forEach(([key, msgs]) => {
+        if (!key.includes(currentUser.uid)) return;
+        const partnerUid = key.replace(currentUser.uid, '').replace('_', '');
+        if (!partnerUid || !allUsers[partnerUid]) return;
+        const msgList = Object.values(msgs);
+        msgList.sort((a, b) => b.createdAt - a.createdAt);
+        const lastMsg = msgList[0];
+        const unreadCount = msgList.filter(m => !m.read && m.toUid === currentUser.uid).length;
+        convMap[partnerUid] = { partnerUid, lastMsg, unreadCount };
+      });
+      const sorted = Object.values(convMap).sort((a, b) => b.lastMsg.createdAt - a.lastMsg.createdAt);
+      if (!sorted.length) {
+        el.innerHTML = '<li style="padding:20px;text-align:center;color:var(--text-secondary);font-size:13px;">還沒有對話</li>';
+        return;
+      }
+      el.innerHTML = sorted.map(c => {
+        const u = allUsers[c.partnerUid];
+        if (!u) return '';
+        const preview = c.lastMsg.text || (c.lastMsg.media ? '📷 圖片' : '');
+        return `<li class="dm-conv ${currentDmPartner === c.partnerUid ? 'active' : ''}" data-uid="${c.partnerUid}">
+          <div class="avatar" style="background:${getColor(c.partnerUid)}">${getInitial(u.fullname)}</div>
+          <div class="dm-conv__info">
+            <div class="dm-conv__name">${u.username}</div>
+            <div class="dm-conv__preview">${preview}</div>
+          </div>
+          <div class="dm-conv__badge ${c.unreadCount > 0 ? '' : 'hidden'}"></div>
+        </li>`;
+      }).join('');
+    }
+
+    function openDmChat(uid) {
+      currentDmPartner = uid;
+      const u = allUsers[uid];
+      if (!u) return;
+      document.getElementById('dmChatEmpty').hidden = true;
+      document.getElementById('dmChatHead').hidden = false;
+      document.getElementById('dmChatMessages').hidden = false;
+      document.getElementById('dmChatInput').hidden = false;
+      document.getElementById('dmChatAvatar').textContent = getInitial(u.fullname);
+      document.getElementById('dmChatAvatar').style.background = getColor(uid);
+      document.getElementById('dmChatName').textContent = u.username;
+      renderDmMessages(uid);
+      renderDmConversations();
+      const key = getDmKey(currentUser.uid, uid);
+      const msgs = allMessages[key] || {};
+      Object.entries(msgs).forEach(([msgId, m]) => {
+        if (!m.read && m.toUid === currentUser.uid) {
+          db.ref(`messages/${key}/${msgId}/read`).set(true);
+        }
+      });
+    }
+
+    function closeDmChat() {
+      currentDmPartner = null;
+      document.getElementById('dmChatEmpty').hidden = false;
+      document.getElementById('dmChatHead').hidden = true;
+      document.getElementById('dmChatMessages').hidden = true;
+      document.getElementById('dmChatInput').hidden = true;
+      document.getElementById('dmChatMessages').innerHTML = '';
+      renderDmConversations();
+    }
+
+    function renderDmMessages(uid) {
+      const el = document.getElementById('dmChatMessages');
+      const key = getDmKey(currentUser.uid, uid);
+      const msgs = allMessages[key] || {};
+      const list = Object.values(msgs).sort((a, b) => a.createdAt - b.createdAt);
+      if (!list.length) {
+        el.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;font-size:13px;">還沒有訊息，開始對話吧</div>';
+        return;
+      }
+      el.innerHTML = list.map(m => {
+        const isMine = m.fromUid === currentUser.uid;
+        return `<div class="dm-msg ${isMine ? 'dm-msg--mine' : 'dm-msg--theirs'}">
+          <div class="dm-msg__bubble">${m.text || ''}</div>
+        </div>`;
+      }).join('');
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function sendDmMessage() {
+      const input = document.getElementById('dmMessageInput');
+      const text = input.value.trim();
+      if (!text || !currentDmPartner) return;
+      const key = getDmKey(currentUser.uid, currentDmPartner);
+      const ref = db.ref(`messages/${key}`).push();
+      ref.set({
+        fromUid: currentUser.uid, toUid: currentDmPartner, text: text,
+        createdAt: Date.now(), read: false
+      }).then(() => {
+        input.value = '';
+        pushNotif(currentDmPartner, '傳送了一則訊息', null);
+      });
+    }
+
+    // ========== 渲染 ==========
+    function avatarHTML(user, sizeClass) {
+      const bg = getColor(user.email || user.uid);
+      const initial = getInitial(user.fullname || user.username);
+      if (user.avatar) {
+        return `<div class="avatar ${sizeClass || ''}"><img src="${user.avatar}" alt=""></div>`;
+      }
+      return `<div class="avatar ${sizeClass || ''}" style="background:${bg}">${initial}</div>`;
+    }
+
+    function refreshAvatars() {
+      const me = allUsers[currentUser.uid];
+      const av = me && me.avatar;
+      const setAv = (id, name, sizeClass) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (av) { el.innerHTML = `<img src="${av}" alt="">`; }
+        else { el.textContent = getInitial(name || currentUser.fullname); el.style.background = 'linear-gradient(135deg, #667eea, #764ba2)'; }
+      };
+      setAv('profileAvatar', currentUser.fullname, 'avatar--me');
+      setAv('navAvatar', currentUser.fullname);
+      setAv('tabAvatar', currentUser.fullname);
+      setAv('asideAvatar', currentUser.fullname);
+    }
+
+    function renderStories() {
+      const el = document.getElementById('stories');
+      const myStories = allStories[currentUser.uid];
+      let html = '';
+      if (myStories) {
+        html += `<div class="story-item" data-uid="${currentUser.uid}">
+          <div class="story-item__ring"><div class="story-item__inner">${avatarHTML({ fullname: currentUser.fullname, avatar: currentUser.avatar, email: currentUser.email, uid: currentUser.uid }, 'nav-avatar')}</div></div>
+          <span class="story-item__name">你的限時動態</span></div>`;
+      }
+      Object.entries(allStories).forEach(([uid, list]) => {
+        if (uid === currentUser.uid) return;
+        if (!following[uid] && !isAdmin()) return;
+        const keys = Object.keys(list);
+        if (!keys.length) return;
+        const u = allUsers[uid];
+        if (!u || u.banned) return;
+        html += `<div class="story-item" data-uid="${uid}">
+          <div class="story-item__ring"><div class="story-item__inner">${avatarHTML(u, 'nav-avatar')}</div></div>
+          <span class="story-item__name">${u.username}</span></div>`;
+      });
+      el.innerHTML = html;
+    }
+
+    function visiblePosts() {
+      const list = Object.entries(allPosts);
+      const filtered = list.filter(([id, p]) => {
+        const u = allUsers[p.authorUid];
+        if (!u || u.banned) return false;
+        if (p.authorUid === currentUser.uid) return true;
+        return !!following[p.authorUid];
+      });
+      filtered.sort((a, b) => b[1].createdAt - a[1].createdAt);
+      return filtered;
+    }
+
+    function renderFeed() {
+      const el = document.getElementById('feed');
+      const posts = visiblePosts();
+      if (!posts.length) {
+        el.innerHTML = `<div class="feed-empty"><div class="feed-empty__icon">📷</div><h3>歡迎來到 Snapgram</h3><p>追蹤朋友或發布你的第一張照片<br>開始分享你的生活瞬間</p></div>`;
+        return;
+      }
+      el.innerHTML = posts.map(([id, p]) => {
+        const u = allUsers[p.authorUid] || {};
+        const liked = p.likes && p.likes[currentUser.uid];
+        const likeCount = p.likes ? Object.keys(p.likes).length : 0;
+        const comments = p.comments ? Object.values(p.comments) : [];
+        return `<article class="post" data-post-id="${id}">
+          <div class="post__head">
+            ${avatarHTML(u, '')}
+            <div><div class="post__user" data-uid="${p.authorUid}">${u.username || 'unknown'}</div></div>
+            ${isAdmin() ? `<button class="post__more admin-del" data-post-id="${id}" type="button">🗑</button>` : ''}
+            <button class="post__more" type="button">⋯</button>
+          </div>
+          <div class="post__media" data-post-id="${id}">
+            ${p.video ? `<video src="${p.video}" controls></video>` : `<img src="${p.media}" alt="貼文">`}
+            <div class="post__heart">❤️</div>
+          </div>
+          <div class="post__actions">
+            <button class="like-btn ${liked ? 'like-active' : ''}" data-post-id="${id}" type="button">
+              <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7.5 2.5c0 5.4-7.5 10-7.5 10z" fill="${liked ? '#ed4956' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="comment-btn" data-post-id="${id}" type="button">
+              <svg viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L4 20l1.3-4A8.5 8.5 0 1 1 21 11.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="share-btn" data-post-id="${id}" type="button">
+              <svg viewBox="0 0 24 24"><path d="M4 12v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8M16 6l-4-4-4 4M12 2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="save-btn" data-post-id="${id}" type="button" style="margin-left:auto">
+              <svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="post__likes">${likeCount.toLocaleString()} 個讚</div>
+          <div class="post__caption"><b data-uid="${p.authorUid}">${u.username || ''}</b> ${p.text || ''}</div>
+          <div class="post__comments" data-post-id="${id}">查看全部 ${comments.length} 則留言</div>
+          ${comments.slice(0, 2).map(c => {
+            const cu = allUsers[c.authorUid] || {};
+            return `<div class="post__caption" style="padding-top:0;color:var(--text-secondary)"><b style="color:var(--text)" data-uid="${c.authorUid}">${cu.username || ''}</b> ${c.text}</div>`;
+          }).join('')}
+          <div class="post__add-comment">
+            <input type="text" placeholder="新增留言…" data-post-id="${id}" />
+            <button type="button" data-post-id="${id}">發佈</button>
+          </div>
+        </article>`;
+      }).join('');
+    }
+
+    function renderReels() {
+      const el = document.getElementById('reels');
+      const videos = visiblePosts().filter(([id, p]) => p.video);
+      if (!videos.length) {
+        el.innerHTML = `<div class="reels-empty"><div style="font-size:48px;margin-bottom:12px;">🎬</div><p>還沒有 Reels</p><p style="font-size:13px;margin-top:4px;">發布影片內容會出現在這裡</p></div>`;
+        return;
+      }
+      el.innerHTML = videos.map(([id, p]) => {
+        const u = allUsers[p.authorUid] || {};
+        return `<div class="reel">
+          <div class="reel__media"><video src="${p.video}" controls loop></video><div class="reel__play">▶</div></div>
+          <div class="reel__info">
+            <div class="reel__user">${avatarHTML(u, '')}<b>${u.username || ''}</b></div>
+            <div class="reel__caption">${p.text || ''}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderExplore() {
+      const el = document.getElementById('explore');
+      const usersEl = document.getElementById('searchUsers');
+      const filter = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+      const users = Object.values(allUsers).filter(u => u.email !== currentUser.email && !u.banned);
+      const matched = filter
+        ? users.filter(u => (u.username || '').toLowerCase().includes(filter) || (u.fullname || '').toLowerCase().includes(filter))
+        : users;
+      if (filter && matched.length) {
+        el.innerHTML = '';
+        usersEl.innerHTML = matched.map(u => `
+          <div class="explore-user-card" data-uid="${u.uid || findUidByUser(u)}">
+            ${avatarHTML(u, '')}
+            <div class="explore-user-card__info">
+              <b>${u.username}</b>
+              <span>${u.fullname || ''}</span>
+            </div>
+            <span style="font-size:12px;color:var(--accent)">查看</span>
+          </div>`).join('');
+      } else {
+        usersEl.innerHTML = filter ? '<div class="explore-empty" style="grid-column:1/-1"><div class="explore-empty__icon">🔍</div><p>找不到符合的用戶</p></div>' : '';
+        const f = matched;
+        if (!f.length) { el.innerHTML = ''; return; }
+        const mediaPosts = Object.entries(allPosts).filter(([id, p]) => f.some(u => u.uid === p.authorUid && p.media)).slice(0, 9);
+        if (mediaPosts.length) {
+          el.innerHTML = mediaPosts.map(([id, p]) => `<div class="explore__item"><img src="${p.media}" /></div>`).join('');
+        } else {
+          el.innerHTML = f.slice(0, 9).map(u => `<div class="explore__item" style="background:${getColor(u.email)};display:flex;align-items:center;justify-content:center;font-size:48px;color:#fff">${getInitial(u.fullname)}</div>`).join('');
+        }
+      }
+    }
+
+    function findUidByUser(u) {
+      return Object.keys(allUsers).find(k => allUsers[k] === u) || '';
+    }
+
+    function renderUserProfile(uid) {
+      const el = document.getElementById('userProfile');
+      const u = allUsers[uid];
+      if (!u) { el.innerHTML = '<p>用戶不存在</p>'; return; }
+      const myPosts = Object.values(allPosts).filter(p => p.authorUid === uid);
+      const isFollowing = !!(allUsers[currentUser.uid].following || {})[uid];
+      el.innerHTML = `
+        <div class="user-profile__back" id="userProfileBack">← 返回搜尋</div>
+        <div class="user-profile__top">
+          ${avatarHTML(u, '')}
+          <div class="user-profile__stats">
+            <div><b>${myPosts.length}</b><span>貼文</span></div>
+            <div><b>${(u.followers || []).length}</b><span>粉絲</span></div>
+            <div><b>${Object.keys(u.following || {}).length}</b><span>追蹤中</span></div>
+          </div>
+        </div>
+        <div class="user-profile__name">${u.fullname || u.username}</div>
+        <div class="user-profile__bio">${u.bio || ''}</div>
+        <div class="user-profile__btns">
+          <button type="button" id="userFollowBtn" class="${isFollowing ? '' : ''}">${isFollowing ? '追蹤中' : '追蹤'}</button>
+          <button type="button" id="userMessageBtn">傳送訊息</button>
+        </div>
+        <div class="pgrid">
+          ${myPosts.length ? myPosts.slice(0, 12).map(p => `<div class="pgrid__item">${p.video ? `<video src="${p.video}"></video>` : `<img src="${p.media}" />`}</div>`).join('')
+            : '<div class="pgrid-empty"><p>還沒有貼文</p></div>'}
+        </div>`;
+      document.getElementById('userFollowBtn').addEventListener('click', () => toggleFollow(uid));
+      document.getElementById('userMessageBtn').addEventListener('click', () => {
+        openDmChat(uid);
+        document.getElementById('dmPanel').hidden = false;
+        navigate('home');
+      });
+      document.getElementById('userProfileBack').addEventListener('click', () => navigate('search'));
+    }
+
+    function renderProfile() {
+      const u = allUsers[currentUser.uid];
+      if (!u) return;
+      document.getElementById('profileName').textContent = u.fullname || u.username;
+      document.getElementById('asideUsername').textContent = u.username;
+      document.getElementById('asideDisplayName').textContent = u.fullname || '';
+      document.getElementById('profileBio').textContent = u.bio || '還沒有個人簡介';
+      const myPosts = Object.values(allPosts).filter(p => p.authorUid === currentUser.uid);
+      document.getElementById('statPosts').textContent = myPosts.length;
+      document.getElementById('statFollowers').textContent = (u.followers || []).length;
+      document.getElementById('statFollowing').textContent = Object.keys(u.following || {}).length;
+      const grid = document.getElementById('pgrid');
+      if (!myPosts.length) {
+        grid.innerHTML = `<div class="pgrid-empty"><div style="font-size:48px;margin-bottom:12px;">📷</div><p>還沒有貼文</p></div>`;
+      } else {
+        myPosts.sort((a, b) => b.createdAt - a.createdAt);
+        grid.innerHTML = myPosts.map(p => `<div class="pgrid__item">${p.video ? `<video src="${p.video}"></video>` : `<img src="${p.media}" />`}</div>`).join('');
+      }
+      refreshAvatars();
+    }
+
+    function renderSuggest() {
+      const el = document.getElementById('suggest');
+      const others = Object.values(allUsers).filter(u => u.email !== currentUser.email && !u.banned && !following[u.email]);
+      if (!others.length) { el.innerHTML = '<li style="color:var(--text-secondary);font-size:13px;text-align:center;padding:12px;">暫無推薦</li>'; return; }
+      el.innerHTML = others.slice(0, 5).map(u => `<li>
+        ${avatarHTML(u, '')}
+        <div class="suggest__info"><b>${u.username}</b><span>為你推薦</span></div>
+        <button class="suggest__follow" data-uid="${u.email}" type="button">追蹤</button>
+      </li>`).join('');
+    }
+
+    function renderNotifs() {
+      const el = document.getElementById('notifList');
+      const list = Object.entries(notifs).sort((a, b) => b[1].createdAt - a[1].createdAt);
+      if (!list.length) { el.innerHTML = '<div class="panel-empty">暫無通知</div>'; return; }
+      el.innerHTML = list.slice(0, 30).map(([id, n]) => {
+        const u = allUsers[n.fromUid] || {};
+        return `<li class="panel__item">
+          ${avatarHTML(u, 'nav-avatar')}
+          <div class="panel__text"><b>${u.username || '系統'}</b> ${n.text}<div class="panel__time">${timeAgo(n.createdAt)}</div></div>
+        </li>`;
+      }).join('');
+    }
+
+    function renderAdmin() {
+      const el = document.getElementById('adminList');
+      if (!isAdmin()) return;
+      el.innerHTML = Object.entries(allUsers).map(([uid, u]) => {
+        const online = u.online && (Date.now() - u.online.lastSeen < 15000);
+        return `<div class="post" style="padding:12px 16px;display:flex;align-items:center;gap:12px">
+          ${avatarHTML(u, '')}
+          <div style="flex:1"><b>${u.username}</b> ${u.banned ? '<span style="color:#e74c3c">[已封]</span>' : ''}<br><span style="font-size:12px;color:var(--text-secondary)">${u.email} · ${online ? '🟢 在線' : '⚫ 離線'}</span></div>
+          ${u.banned ? `<button class="suggest__follow" data-unban="${uid}" type="button">解封</button>` : `<button class="suggest__follow" style="color:#e74c3c" data-ban="${uid}" type="button">封號</button>`}
+        </div>`;
+      }).join('');
+    }
+
+    // ========== 操作 ==========
+    function toggleLike(id) {
+      const ref = db.ref(`posts/${id}/likes/${currentUser.uid}`);
+      const post = allPosts[id];
+      if (post && post.likes && post.likes[currentUser.uid]) ref.remove();
+      else { ref.set(true); pushNotif(post.authorUid, '喜歡了你的貼文', id); }
+    }
+
+    function addComment(id, text) {
+      const ref = db.ref(`posts/${id}/comments`).push();
+      ref.set({ authorUid: currentUser.uid, text, createdAt: Date.now() });
+      pushNotif(allPosts[id].authorUid, '留言了你的貼文：' + text, id);
+    }
+
+    function pushNotif(toUid, text, postId) {
+      if (toUid === currentUser.uid) return;
+      db.ref(`notifications/${toUid}`).push().set({ fromUid: currentUser.uid, text, postId, createdAt: Date.now(), read: false });
+    }
+
+    function publishPost() {
+      const caption = document.getElementById('createCaption').value.trim();
+      const preview = document.getElementById('createPreview');
+      const fileUrl = preview.dataset.fileUrl;
+      const fileType = preview.dataset.fileType;
+      if (!fileUrl) { showToast('請先選擇圖片或影片'); return; }
+      const id = db.ref('posts').push().key;
+      const data = { authorUid: currentUser.uid, text: caption, createdAt: Date.now(), likes: {}, comments: {} };
+      if (fileType === 'video') data.video = fileUrl; else data.media = fileUrl;
+      db.ref('posts/' + id).set(data).then(() => {
+        document.getElementById('createModal').hidden = true;
+        navigate('home');
+        showToast('貼文已發佈');
+      });
+    }
+
+    function toggleFollow(uid) {
+      const ref = db.ref(`accounts/${currentUser.uid}/following/${uid}`);
+      const myFollowing = allUsers[currentUser.uid].following || {};
+      if (myFollowing[uid]) { ref.remove(); showToast('已取消追蹤'); }
+      else { ref.set(true); showToast('已追蹤'); }
+    }
+
+    // ========== 更換頭像 ==========
+    function compressImage(file, maxSize, quality, callback) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > height) { if (width > maxSize) { height = height * maxSize / width; width = maxSize; } }
+          else { if (height > maxSize) { width = width * maxSize / height; height = maxSize; } }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          let dataUrl = canvas.toDataURL('image/jpeg', quality);
+          // 若仍過大，降低品質再壓一次
+          if (dataUrl.length > 900000 && quality > 0.4) {
+            dataUrl = canvas.toDataURL('image/jpeg', 0.4);
+          }
+          callback(dataUrl);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleAvatarFile(file) {
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { showToast('請選擇圖片檔案'); return; }
+      compressImage(file, 400, 0.7, dataUrl => {
+        db.ref(`accounts/${currentUser.uid}/avatar`).set(dataUrl).then(() => {
+          currentUser.avatar = dataUrl;
+          refreshAvatars();
+          showToast('頭像已更新');
+        }).catch(err => showToast('上傳失敗：' + err.message));
+      });
+    }
+
+    // ========== 編輯個人檔案 ==========
+    function openEditProfile() {
+      const me = allUsers[currentUser.uid] || {};
+      document.getElementById('editFullName').value = me.fullname || '';
+      document.getElementById('editUsername').value = me.username || '';
+      document.getElementById('editBio').value = me.bio || '';
+      document.getElementById('editError').textContent = '';
+      document.getElementById('editProfileModal').hidden = false;
+    }
+
+    function saveEditProfile() {
+      const fullName = document.getElementById('editFullName').value.trim();
+      const username = document.getElementById('editUsername').value.trim().toLowerCase();
+      const bio = document.getElementById('editBio').value.trim();
+      const errEl = document.getElementById('editError');
+      errEl.textContent = '';
+
+      if (!fullName) { errEl.textContent = '全名不能為空'; return; }
+      if (!username) { errEl.textContent = '用戶名不能為空'; return; }
+      if (!/^[a-zA-Z0-9_]+$/.test(username)) { errEl.textContent = '用戶名只允許字母、數字、底線'; return; }
+
+      const me = allUsers[currentUser.uid];
+      const updates = {};
+      const tasks = [];
+
+      // 全名：單獨更新
+      if ((me.fullname || '') !== fullName) {
+        tasks.push(db.ref(`accounts/${currentUser.uid}/fullname`).set(fullName));
+        currentUser.fullname = fullName;
+      }
+      // 簡介：單獨更新
+      if ((me.bio || '') !== bio) {
+        tasks.push(db.ref(`accounts/${currentUser.uid}/bio`).set(bio));
+        currentUser.bio = bio;
+      }
+      // 用戶名：需查重後更新
+      if ((me.username || '') !== username) {
+        tasks.push(new Promise((resolve, reject) => {
+          db.ref('accounts').orderByChild('username').equalTo(username).once('value').then(snap => {
+            let taken = false;
+            snap.forEach(child => { if (child.key !== currentUser.uid) taken = true; });
+            if (taken) { errEl.textContent = '用戶名已被使用'; reject(new Error('taken')); return; }
+            db.ref(`accounts/${currentUser.uid}/username`).set(username).then(() => {
+              currentUser.username = username;
+              resolve();
+            });
+          });
+        }));
+      }
+
+      Promise.all(tasks).then(() => {
+        document.getElementById('editProfileModal').hidden = true;
+        refreshAvatars();
+        renderProfile();
+        renderSuggest();
+        renderFeed();
+        showToast('個人檔案已更新');
+      }).catch(err => { if (err && err.message !== 'taken') showToast('儲存失敗'); });
+    }
+
+    // ========== 導航 ==========
+    function navigate(view) {
+      // 權限攔截：非管理員禁止進入管理面板
+      if (view === 'admin' && !isAdmin()) { view = 'home'; }
+      currentTab = view;
+      document.querySelectorAll('.view').forEach(v => v.hidden = v.dataset.view !== view);
+      document.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === view));
+      window.scrollTo(0, 0);
+      if (view === 'home') renderFeed();
+      if (view === 'search') renderExplore();
+    }
+
+    // ========== 故事 ==========
+    let storyState = { uid: null, idx: 0, timer: null, progress: 0 };
+    function openStory(uid) {
+      const list = allStories[uid];
+      if (!list) return;
+      storyState.uid = uid;
+      storyState.idx = 0;
+      document.getElementById('storyViewer').hidden = false;
+      document.body.style.overflow = 'hidden';
+      playStory();
+    }
+    function closeStory() {
+      clearInterval(storyState.timer);
+      document.getElementById('storyViewer').hidden = true;
+      document.body.style.overflow = '';
+    }
+    function playStory() {
+      clearInterval(storyState.timer);
+      const list = allStories[storyState.uid];
+      const keys = Object.keys(list);
+      if (storyState.idx >= keys.length) return closeStory();
+      const id = keys[storyState.idx];
+      const item = list[id];
+      const u = allUsers[storyState.uid];
+      document.getElementById('storyBars').innerHTML = keys.map((_, i) => `<div class="story__bar"><div class="story__bar-fill ${i < storyState.idx ? 'done' : ''}" id="barfill-${i}"></div></div>`).join('');
+      document.getElementById('storyAvatar').textContent = getInitial(u.fullname);
+      document.getElementById('storyName').textContent = u.username;
+      document.getElementById('storyTime').textContent = timeAgo(item.createdAt);
+      const me = document.getElementById('storyMedia');
+      if (item.video) me.innerHTML = `<video src="${item.video}" controls autoplay></video>`;
+      else me.innerHTML = `<img src="${item.media}" />`;
+      document.getElementById('storyCaption').textContent = item.text || '';
+      storyState.progress = 0;
+      const fill = document.getElementById('barfill-' + storyState.idx);
+      storyState.timer = setInterval(() => {
+        storyState.progress += 2;
+        if (fill) fill.style.width = storyState.progress + '%';
+        if (storyState.progress >= 100) { storyState.idx++; playStory(); }
+      }, 100);
+    }
+    function storyNext() { storyState.idx++; playStory(); }
+    function storyPrev() { if (storyState.idx > 0) { storyState.idx--; playStory(); } }
+
+    // ========== 初始化 ==========
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.body.classList.add('dark');
+      }
+
+      document.querySelectorAll('.auth-tab').forEach(t => t.addEventListener('click', () => switchAuthTab(t.dataset.authTab)));
+      document.getElementById('authFooter').addEventListener('click', e => {
+        if (e.target.id === 'switchToSignup') switchAuthTab('signup');
+        if (e.target.id === 'switchToLogin') switchAuthTab('login');
+      });
+      document.getElementById('loginBtn').addEventListener('click', doLogin);
+      document.getElementById('signupBtn').addEventListener('click', doSignup);
+      document.getElementById('logoutBtn').addEventListener('click', () => { auth.signOut(); });
+
+      document.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav)));
+      document.getElementById('wordmark').addEventListener('click', e => { e.preventDefault(); navigate('home'); });
+
+      document.getElementById('themeToggle').addEventListener('click', () => {
+        document.body.classList.toggle('dark');
+        localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+      });
+
+      document.getElementById('notifBtn').addEventListener('click', () => {
+        document.getElementById('notifBadge').hidden = true;
+        document.getElementById('notifPanel').hidden = false;
+      });
+      document.getElementById('closeNotif').addEventListener('click', () => document.getElementById('notifPanel').hidden = true);
+      document.getElementById('notifPanel').addEventListener('click', e => { if (e.target.id === 'notifPanel') document.getElementById('notifPanel').hidden = true; });
+
+      // 私信面板
+      document.getElementById('dmBtn').addEventListener('click', () => {
+        document.getElementById('dmPanel').hidden = false;
+        document.getElementById('dmBadge').hidden = true;
+      });
+      document.getElementById('closeDm').addEventListener('click', () => { document.getElementById('dmPanel').hidden = true; closeDmChat(); });
+      document.getElementById('dmPanel').addEventListener('click', e => { if (e.target.id === 'dmPanel') { document.getElementById('dmPanel').hidden = true; closeDmChat(); } });
+      document.getElementById('dmChatClose').addEventListener('click', closeDmChat);
+      document.getElementById('dmSendBtn').addEventListener('click', sendDmMessage);
+      document.getElementById('dmMessageInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendDmMessage(); });
+      document.getElementById('dmConvList').addEventListener('click', e => {
+        const conv = e.target.closest('.dm-conv');
+        if (conv) openDmChat(conv.dataset.uid);
+      });
+      document.getElementById('dmNewChatSelect').addEventListener('change', e => {
+        const email = e.target.value;
+        if (!email) return;
+        const uid = Object.keys(allUsers).find(k => allUsers[k].email === email);
+        if (uid) { openDmChat(uid); e.target.value = ''; }
+      });
+
+      // 更換頭像
+      const avatarInput = document.getElementById('avatarFileInput');
+      document.getElementById('profileAvatar').addEventListener('click', () => avatarInput.click());
+      document.getElementById('avatarOverlay').addEventListener('click', e => { e.stopPropagation(); avatarInput.click(); });
+      avatarInput.addEventListener('change', e => { handleAvatarFile(e.target.files[0]); e.target.value = ''; });
+
+      // 編輯個人檔案
+      document.getElementById('editProfileBtn').addEventListener('click', openEditProfile);
+      document.getElementById('closeEditProfile').addEventListener('click', () => document.getElementById('editProfileModal').hidden = true);
+      document.getElementById('cancelEditProfile').addEventListener('click', () => document.getElementById('editProfileModal').hidden = true);
+      document.getElementById('saveEditProfile').addEventListener('click', saveEditProfile);
+
+      // 分享個人檔案
+      document.getElementById('shareProfileBtn').addEventListener('click', () => {
+        navigator.clipboard?.writeText(window.location.href);
+        showToast('個人檔案連結已複製');
+      });
+
+      // 發布貼文
+      document.getElementById('createBtn').addEventListener('click', () => {
+        document.getElementById('createModal').hidden = false;
+        document.getElementById('createCaption').value = '';
+        document.getElementById('createPreview').innerHTML = '📷 點擊選擇圖片或影片';
+        document.getElementById('createPreview').dataset.fileUrl = '';
+      });
+      document.getElementById('createPreview').addEventListener('click', () => document.getElementById('createFileInput').click());
+      document.getElementById('createFileInput').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const preview = document.getElementById('createPreview');
+        preview.innerHTML = file.type.startsWith('video/') ? `<video src="${url}" controls></video>` : `<img src="${url}" />`;
+        preview.dataset.fileUrl = url;
+        preview.dataset.fileType = file.type.startsWith('video/') ? 'video' : 'image';
+      });
+      document.getElementById('closeCreate').addEventListener('click', () => document.getElementById('createModal').hidden = true);
+      document.getElementById('cancelCreate').addEventListener('click', () => document.getElementById('createModal').hidden = true);
+      document.getElementById('submitCreate').addEventListener('click', publishPost);
+
+      // 故事
+      document.getElementById('stories').addEventListener('click', e => {
+        const item = e.target.closest('.story-item');
+        if (item) openStory(item.dataset.uid);
+      });
+      document.getElementById('storyClose').addEventListener('click', closeStory);
+      document.getElementById('storyNext').addEventListener('click', storyNext);
+      document.getElementById('storyPrev').addEventListener('click', storyPrev);
+      document.getElementById('storyViewer').addEventListener('click', e => { if (e.target.id === 'storyViewer') closeStory(); });
+
+      // 資訊流互動
+      document.getElementById('feed').addEventListener('click', e => {
+        const likeBtn = e.target.closest('.like-btn');
+        if (likeBtn) { toggleLike(likeBtn.dataset.postId); return; }
+        const usernameEl = e.target.closest('[data-uid]');
+        if (usernameEl && (e.target.closest('.post__user') || e.target.closest('.post__caption b'))) {
+          const uid = usernameEl.dataset.uid;
+          if (uid && allUsers[uid]) { currentViewingUser = uid; navigate('user'); renderUserProfile(uid); }
+          return;
+        }
+        const media = e.target.closest('.post__media');
+        if (media) {
+          const id = media.dataset.postId;
+          const post = allPosts[id];
+          if (!post) return;
+          if (!media._lastTap || Date.now() - media._lastTap > 300) { media._lastTap = Date.now(); return; }
+          media._lastTap = 0;
+          if (!post.likes || !post.likes[currentUser.uid]) { toggleLike(id); }
+          const heart = media.querySelector('.post__heart');
+          heart.classList.add('show');
+          setTimeout(() => heart.classList.remove('show'), 700);
+          return;
+        }
+        const adminDel = e.target.closest('.admin-del');
+        if (adminDel && isAdmin()) {
+          if (confirm('確定刪除此貼文？')) db.ref(`posts/${adminDel.dataset.postId}`).remove();
+          return;
+        }
+        if (e.target.closest('.share-btn')) { navigator.clipboard?.writeText(window.location.href); showToast('連結已複製'); }
+        if (e.target.closest('.save-btn')) showToast('已儲存');
+        if (e.target.closest('.comment-btn') || e.target.closest('.post__comments')) {
+          e.target.closest('.post').querySelector('input')?.focus();
+        }
+      });
+      document.getElementById('feed').addEventListener('input', e => {
+        if (e.target.matches('.post__add-comment input')) {
+          e.target.nextElementSibling.classList.toggle('active', e.target.value.trim().length > 0);
+        }
+      });
+      document.getElementById('feed').addEventListener('click', e => {
+        if (e.target.matches('.post__add-comment button.active')) {
+          const input = e.target.previousElementSibling;
+          if (input.value.trim()) {
+            addComment(e.target.dataset.postId, input.value.trim());
+            input.value = '';
+            e.target.classList.remove('active');
+            showToast('留言已發佈');
+          }
+        }
+      });
+
+      // 搜尋：點擊用戶進入他人檔案
+      document.getElementById('searchForm').addEventListener('submit', e => e.preventDefault());
+      document.getElementById('searchInput').addEventListener('input', renderExplore);
+      document.getElementById('searchUsers').addEventListener('click', e => {
+        const card = e.target.closest('.explore-user-card');
+        if (card && card.dataset.uid) {
+          currentViewingUser = card.dataset.uid;
+          navigate('user');
+          renderUserProfile(card.dataset.uid);
+        }
+      });
+
+      // 個人檔案 tab
+      document.querySelectorAll('.ptab').forEach(t => t.addEventListener('click', () => {
+        document.querySelectorAll('.ptab').forEach(x => x.classList.remove('is-active'));
+        t.classList.add('is-active');
+      }));
+
+      // 追蹤
+      document.getElementById('suggest').addEventListener('click', e => {
+        const btn = e.target.closest('.suggest__follow');
+        if (btn && btn.dataset.uid) { toggleFollowByEmail(btn.dataset.uid); }
+      });
+      document.getElementById('seeAllBtn').addEventListener('click', () => showToast('查看全部推薦'));
+
+      // 管理
+      document.getElementById('adminList').addEventListener('click', e => {
+        const banBtn = e.target.closest('[data-ban]');
+        const unbanBtn = e.target.closest('[data-unban]');
+        if (banBtn && isAdmin()) {
+          const uid = banBtn.dataset.ban;
+          if (confirm('確定封禁此用戶？')) {
+            db.ref(`accounts/${uid}/banned`).set(true);
+            db.ref(`bans/${uid}`).set({ bannedAt: Date.now(), by: currentUser.uid });
+          }
+        }
+        if (unbanBtn && isAdmin()) {
+          const uid = unbanBtn.dataset.unban;
+          db.ref(`accounts/${uid}/banned`).set(false);
+          db.ref(`bans/${uid}`).remove();
+        }
+      });
+
+      // 鍵盤
+      document.addEventListener('keydown', e => {
+        if (!document.getElementById('storyViewer').hidden) {
+          if (e.key === 'Escape') closeStory();
+          if (e.key === 'ArrowRight') storyNext();
+          if (e.key === 'ArrowLeft') storyPrev();
+        }
+        if (!document.getElementById('editProfileModal').hidden && e.key === 'Escape') {
+          document.getElementById('editProfileModal').hidden = true;
+        }
+      });
+    });
+
+    // toggleFollow 的 email 版本
+    function toggleFollowByEmail(email) {
+      const uid = Object.keys(allUsers).find(k => allUsers[k].email === email);
+      if (uid) toggleFollow(uid);
+    }
+  </script>
+</body>
+</html>
